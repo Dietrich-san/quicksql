@@ -1,0 +1,22 @@
+! Orders -> SELECT * FROM Orders;
+! Orders L -> SELECT * FROM Orders LIMIT 1;
+! Orders L2 -> SELECT * FROM Orders LIMIT 2;
+! Orders L1 -> SELECT * FROM Orders LIMIT 1;
+
+! Orders 12345667 -> SELECT * FROM Orders WHERE OrderID = 12345667;
+
+! Orders 2152 -> SELECT * FROM Orders WHERE OrderID = 2152;
+
+! Orders OrderTypeID=15 -> SELECT * FROM Orders WHERE OrderTypeID = 15;
+
+! Orders 111321 L -> SELECT * FROM Orders WHERE OrderID = 11321 LIMIT 1;
+
+!ChainID Orders 8888888 -> SELECT ChainID FROM Orders WHERE OrderID = 8888888;
+
+
+!ChainID,OrderTypeID Orders -> SELECT ChainID,OrderTypeID FROM Orders;
+!ChainID,OrderTypeID Orders 123 -> SELECT ChainID,OrderTypeID FROM Orders WHERE OrderID = 123;
+!ChainID,UserID Orders OrderTypeID=15 -> SELECT ChainID,OrderTypeID FROM Orders WHERE OrderTypeID = 15;
+!ChainID,UserID Orders OrderTypeID=15 L -> SELECT ChainID,OrderTypeID FROM Orders WHERE OrderTypeID = 15 LIMIT 1;
+!ChainID,UserID Orders OrderTypeID=15 L58 -> SELECT ChainID,OrderTypeID FROM Orders WHERE OrderTypeID = 15 LIMIT 58;
+! Orders X,Y -> SELECT * FROM Orders WHERE OrderID IN (X,Y);
