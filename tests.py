@@ -1,28 +1,10 @@
-# ! Orders -> SELECT * FROM Orders;
-# ! Orders L -> SELECT * FROM Orders LIMIT 1;
-# ! Orders L2 -> SELECT * FROM Orders LIMIT 2;
-# ! Orders L1 -> SELECT * FROM Orders LIMIT 1;
-# ! Orders 12345667 -> SELECT * FROM Orders WHERE OrderID = 12345667;
-# ! Orders 2152 -> SELECT * FROM Orders WHERE OrderID = 2152;
-# ! Orders OrderTypeID=15 -> SELECT * FROM Orders WHERE OrderTypeID = 15;
-# ! Orders 111321 L -> SELECT * FROM Orders WHERE OrderID = 11321 LIMIT 1;
+from enum import Enum
+import re
 
-# !ChainID Orders -> SELECT ChainID FROM Orders;
-# !ChainID Orders L -> SELECT ChainID FROM Orders LIMIT 1;
-# !ChainID Orders L2 -> SELECT ChainID FROM Orders LIMIT 2;
-# !ChainID Orders L1 -> SELECT ChainID FROM Orders LIMIT 1;
-# !ChainID Orders 12345667 -> SELECT ChainID FROM Orders WHERE OrderID = 12345667;
-# !ChainID Orders 2152 -> SELECT ChainID FROM Orders WHERE OrderID = 2152;
-# !ChainID Orders OrderTypeID=15 -> SELECT ChainID FROM Orders WHERE OrderTypeID = 15;
-# !ChainID Orders 111321 L -> SELECT ChainID FROM Orders WHERE OrderID = 11321 LIMIT 1;
-
-# !ChainID Orders 8888888 -> SELECT ChainID FROM Orders WHERE OrderID = 8888888;
-# !ChainID,OrderTypeID Orders -> SELECT ChainID,OrderTypeID FROM Orders;
-# !ChainID,OrderTypeID Orders 123 -> SELECT ChainID,OrderTypeID FROM Orders WHERE OrderID = 123;
-# !ChainID,UserID Orders OrderTypeID=15 -> SELECT ChainID,OrderTypeID FROM Orders WHERE OrderTypeID = 15;
-# !ChainID,UserID Orders OrderTypeID=15 L -> SELECT ChainID,OrderTypeID FROM Orders WHERE OrderTypeID = 15 LIMIT 1;
-# !ChainID,UserID Orders OrderTypeID=15 L58 -> SELECT ChainID,OrderTypeID FROM Orders WHERE OrderTypeID = 15 LIMIT 58;
-# ! Orders X,Y -> SELECT * FROM Orders WHERE OrderID IN (X,Y);
+class PartType(Enum):
+    WHERE = 3
+    ORDERBY = 4
+    LIMIT = 5
 
 def convert_hoffsql_select_to_sql_select_clause(debug_print, input):
     input = input.strip()
@@ -41,19 +23,23 @@ def convert_hoffsql_select_to_sql_select_clause(debug_print, input):
 
     return input[1:]
 
-def convert_hoffsql_from_to_sql_from_clause(debug_print, input):
-    input = input.strip()
+def convert_hoffsql_from_to_sql_from_clause(debug_print, frompart):
+    frompart = frompart.strip()
+
+    if frompart == '' or frompart == None:
+        raise Exception("From part needs to be defined!")
+
     # throw exception if contains spaces
-    if ' ' in input:
+    if ' ' in frompart:
         raise Exception("from part cannot contain spaces!")
 
-    if ',' in input:
+    if ',' in frompart:
         raise Exception("from part cannot contain commas (yet)!")
 
     # Should split on comma here later, but for now only support one table
-    first_table = input
+    first_table = frompart
 
-    return input, first_table
+    return frompart, first_table
 
 def convert_hoffsql_where_to_sql_where_clause(debug_print, where, main_table):
     where = where.strip()
@@ -113,7 +99,7 @@ def convert_hoffsql_limit_to_sql_limit_clause(debug_print, limit):
         if limit.isdigit():
             limit_rows = limit
         else:
-            raise Exception("Cannot parse hoffsql limit part to an integer!")
+            raise Exception("Hoffsql limit part must be an integer! limit part: " + limit)
 
     return str(limit_rows)
 
@@ -155,7 +141,7 @@ def convert_hoffsql_orderby_to_sql_orderby_clause(debug_print, orderby):
         # If only an O and a A/D (direction) was indicated, we default to first column (1)
         orderby_columnlist = '1'
 
-    elif len(orderby) >= 3:
+    elif len(orderby) > 2:
         if orderby[1] == 'A':
             if debug_print:
                 print("Ascending direction defined")
@@ -178,7 +164,7 @@ def convert_hoffsql_orderby_to_sql_orderby_clause(debug_print, orderby):
             raise Exception("No column list to order by entered! Must follow the underscore!")
 
         if ',' in orderby_columnlist:
-            raise Exception("Quicksql does not allow multi column order by clauses!")
+            raise Exception("Quicksql does not allow multi column order by clauses (for now)!")
 
         if debug_print:
             print("Order by column list: " + orderby_columnlist)
@@ -186,10 +172,50 @@ def convert_hoffsql_orderby_to_sql_orderby_clause(debug_print, orderby):
     else:
         raise Exception("Impossible case in order by! Order by part: " + orderby)
 
+    if orderby_columnlist == '' or orderby_columnlist == None:
+        raise Exception("Order by column list is not defined!")
+
+    if direction == '' or direction == None:
+        raise Exception("Direction is not defined!")
+
     return orderby_columnlist + ' ' + direction
 
-class QuickSQLPart:
-    pass
+class QuickSQLQuery:
+    selectPart = None
+    fromPart = None
+    wherePart = None
+    orderbyPart = None
+    limitPart = None
+
+    sqlSelect = None
+    sqlFrom = None
+    sqlWhere = None
+    sqlOrderby = None
+    sqlLimit = None
+
+    primaryTable = None
+
+def guess_part_type(print_debug, part_string):
+    part_string = part_string.strip()
+
+    if part_string == None or part_string == '':
+        raise Exception('No orderby part defined!');
+
+    first_character = part_string[0]
+
+    if re.search("^[0-9]+$", part_string):
+        # If the part only contains numbers it must be the where part as that only makes sense for it
+        return PartType.WHERE
+    elif '=' in part_string:
+        # Some characters should indicate that this is where part since they indicate logical expression (which only works in where part)
+        return PartType.WHERE
+    elif first_character == 'O':
+        return PartType.ORDERBY
+    elif first_character == 'L':
+        return PartType.LIMIT
+    else:
+        # Default to where
+        return PartType.WHERE
 
 def convert_to_sql(print_debug, hoffsql):
     print("Converting quicksql: " + hoffsql)
@@ -205,96 +231,119 @@ def convert_to_sql(print_debug, hoffsql):
     if select_part == '' or select_part == None:
         raise Exception("Select part needs to exist!")
 
-    if print_debug:
-        print("SELECT PART: " + select_part)
-    sql_select_clause = convert_hoffsql_select_to_sql_select_clause(print_debug, select_part)
-    if print_debug:
-        print("SELECT clause: " + sql_select_clause)
+    quickSQLQuery = QuickSQLQuery()
 
-    from_part = list_of_parts[1].strip()
-    if from_part == '' or from_part == None:
-        raise Exception("From part needs to exist!")
-
-    if print_debug:
-        print("FROM PART: " + from_part)
-
-    sql_from_clause, primary_table = convert_hoffsql_from_to_sql_from_clause(print_debug, from_part)
-
-    if print_debug:
-        print("FROM clause: " + sql_from_clause + ", primary table " + primary_table)
+    # STEP ONE is to figure out the part type each element is (or should be)
 
 
 
-    sql_limit_clause = None
-    sql_where_clause = None
-    sql_orderby_clause = None
-    if len(list_of_parts) > 2:
-        if list_of_parts[2][0] == 'L':
-            # This is the limit part
-            if print_debug:
-                print("LIMIT PART (in index 2): " + list_of_parts[2])
-            sql_limit_clause = convert_hoffsql_limit_to_sql_limit_clause(print_debug, list_of_parts[2])
-        elif list_of_parts[2][0] == 'O':
-            # Could be orderby part, let's check!
-            if len(list_of_parts[2]) == 1:
-                if debug_print:
-                    print("This is just an O, must be orderby part!")
-                sql_orderby_clause = convert_hoffsql_orderby_to_sql_orderby_clause(print_debug, list_of_parts[2])
-            #else
+    # The first part always has to be (and is assumed to be) the select part
+    quickSQLQuery.selectPart = list_of_parts[0]
 
-            if print_debug:
-                print("ORDER BY PART: " + list_of_parts[2])
-            sql_orderby_clause = convert_hoffsql_orderby_to_sql_orderby_clause(print_debug, list_of_parts[2])
+    # The second part always has to be (and is assumed to be) the from part
+    # (since it has no special initiating character, as the where, order by and limit parts do)
+    quickSQLQuery.fromPart = list_of_parts[1]
+
+    list_of_parts = list_of_parts[2:]
+
+    for part in list_of_parts:
+        part_type = guess_part_type(print_debug, part)
+        if (part_type == PartType.WHERE):
+            if quickSQLQuery.wherePart == None:
+                quickSQLQuery.wherePart = part
+            else:
+                raise Exception("Where part is not null! Two parts seems to be wheres! Current where: " + quickSQLQuery.wherePart + ", new where: " + part)
+
+        elif(part_type == PartType.ORDERBY):
+            if quickSQLQuery.orderbyPart == None:
+                quickSQLQuery.orderbyPart = part
+            else:
+                raise Exception("Orderby part is not null! Two parts seems to be orderbys! Current orderby: " + quickSQLQuery.orderbyPart + ", new orderby: " + part)
+
+        elif(part_type == PartType.LIMIT):
+            if quickSQLQuery.limitPart == None:
+                quickSQLQuery.limitPart = part
+            else:
+                raise Exception("Limit part is not null! Two parts seems to be limits! Current limit: " + quickSQLQuery.limitPart + ", new limit: " + part)
         else:
-            # This is the where part
-            if print_debug:
-                print("WHERE PART (in index 2): " + list_of_parts[2])
-            sql_where_clause = convert_hoffsql_where_to_sql_where_clause(print_debug, list_of_parts[2], primary_table)
-            if print_debug:
-                print("WHERE clause: " + sql_where_clause)
+            raise Exception("Unsupported part type " + part_type)
 
-    if len(list_of_parts) > 3:
-        if list_of_parts[3][0] == 'O':
-            # This is the orderby part
-            if print_debug:
-                print("ORDER BY PART: " + list_of_parts[3])
+    # Now that we know the type of part (for each quicksqlpart) we have to parse them and translate them to sql
 
-            raise Exception("Cannot have order by part in the 3rd index (fourth element)!")
-        elif list_of_parts[3][0] == 'L':
-            # This is the limit part
+    if quickSQLQuery.selectPart.strip() == '' or quickSQLQuery.selectPart == None:
+        raise Exception("sql select clause should not be empty string or null at this point!")
 
-            if print_debug:
-                print("LIMIT PART (in index 3): " + list_of_parts[3])
-            sql_limit_clause = convert_hoffsql_limit_to_sql_limit_clause(print_debug, list_of_parts[3])
-        else:
-            # This is by default the where clause
-            if print_debug:
-                print("WHERE PART (in index 3): " + list_of_parts[3])
-            if sql_where_clause != None:
-                raise Exception("Where clause cannot be defined yet at this point!")
+    if quickSQLQuery.fromPart.strip() == '' or quickSQLQuery.fromPart == None:
+        raise Exception("sql from clause should not be empty string or null at this point!")
 
-            sql_where_clause = convert_hoffsql_where_to_sql_where_clause(print_debug, list_of_parts[2], primary_table)
-            if print_debug:
-                print("WHERE clause: " + sql_where_clause)
+    if print_debug:
+        print("SELECT PART: " + quickSQLQuery.selectPart)
+    quickSQLQuery.sqlSelect = convert_hoffsql_select_to_sql_select_clause(print_debug, quickSQLQuery.selectPart)
+    if print_debug:
+        print("SELECT clause: " + quickSQLQuery.sqlSelect)
 
-    sql_query = "SELECT " + sql_select_clause + " FROM " + sql_from_clause
-    if sql_where_clause != None:
-        if sql_where_clause.strip() == '':
+
+
+    if print_debug:
+        print("FROM PART: " + quickSQLQuery.fromPart)
+    quickSQLQuery.sqlFrom, quickSQLQuery.primaryTable = convert_hoffsql_from_to_sql_from_clause(print_debug, quickSQLQuery.fromPart)
+    if print_debug:
+        print("FROM clause: " + quickSQLQuery.sqlFrom + ", primary table " + quickSQLQuery.primaryTable)
+
+
+
+    # The rest of the parts are all optional
+    if quickSQLQuery.wherePart != None:
+        if print_debug:
+            print("WHERE PART: " + quickSQLQuery.wherePart)
+        quickSQLQuery.sqlWhere = convert_hoffsql_where_to_sql_where_clause(print_debug, quickSQLQuery.wherePart, quickSQLQuery.primaryTable)
+        if print_debug:
+            print("WHERE clause: " + quickSQLQuery.sqlWhere)
+
+
+
+    if quickSQLQuery.orderbyPart != None:
+        if print_debug:
+            print("ORDERBY PART: " + quickSQLQuery.orderbyPart)
+        quickSQLQuery.sqlOrderby = convert_hoffsql_orderby_to_sql_orderby_clause(print_debug, quickSQLQuery.orderbyPart)
+        if print_debug:
+            print("ORDERBY clause: " + quickSQLQuery.sqlOrderby)
+
+
+
+    if quickSQLQuery.limitPart != None:
+        if print_debug:
+            print("LIMIT PART: " + quickSQLQuery.limitPart)
+        quickSQLQuery.sqlLimit = convert_hoffsql_limit_to_sql_limit_clause(print_debug, quickSQLQuery.limitPart)
+        if print_debug:
+            print("LIMIT clause: " + quickSQLQuery.sqlLimit)
+
+
+
+    if quickSQLQuery.sqlSelect.strip() == '' or quickSQLQuery.sqlSelect == None:
+        raise Exception("sql select clause should not be empty string at this point!")
+
+    if quickSQLQuery.sqlFrom.strip() == '' or quickSQLQuery.sqlFrom == None:
+        raise Exception("sql from clause should not be empty string at this point!")
+
+    sql_query = "SELECT " + quickSQLQuery.sqlSelect + " FROM " + quickSQLQuery.sqlFrom
+    if quickSQLQuery.sqlWhere != None:
+        if quickSQLQuery.sqlWhere.strip() == '':
             raise Exception("sql where clause should not be empty string at this point!")
 
-        sql_query = sql_query + " WHERE " + sql_where_clause
+        sql_query = sql_query + " WHERE " + quickSQLQuery.sqlWhere
 
-    if sql_orderby_clause != None:
-        if sql_orderby_clause.strip() == '':
+    if quickSQLQuery.sqlOrderby != None:
+        if quickSQLQuery.sqlOrderby.strip() == '':
+            raise Exception("sql orderby clause should not be empty string at this point!")
+
+        sql_query = sql_query + " ORDER BY " + quickSQLQuery.sqlOrderby
+
+    if quickSQLQuery.sqlLimit != None:
+        if quickSQLQuery.sqlLimit.strip() == '':
             raise Exception("sql limit clause should not be empty string at this point!")
 
-        sql_query = sql_query + " ORDER BY " + sql_orderby_clause
-
-    if sql_limit_clause != None:
-        if sql_limit_clause.strip() == '':
-            raise Exception("sql limit clause should not be empty string at this point!")
-
-        sql_query = sql_query + " LIMIT " + sql_limit_clause
+        sql_query = sql_query + " LIMIT " + quickSQLQuery.sqlLimit
 
     sql_query = sql_query + ";"
 
@@ -326,70 +375,70 @@ if __name__ == "__main__":
     print ("Test hoffsql to sql:\n\n")
 
     # These pass:
-    # test(convert_to_sql(False, "! Orders"), "SELECT * FROM Orders;", True)
-    # test(convert_to_sql(False, "! Orders L"), "SELECT * FROM Orders LIMIT 1;", True)
-    # test(convert_to_sql(False, "! Orders L5"), "SELECT * FROM Orders LIMIT 5;", True)
-    # test(convert_to_sql(False, "! Orders L1"), "SELECT * FROM Orders LIMIT 1;", True)
-    # test(convert_to_sql(False, "! Orders 12345667"), "SELECT * FROM Orders WHERE OrderID = 12345667;", True)
-    # test(convert_to_sql(False, "! Orders 12345667 L"), "SELECT * FROM Orders WHERE OrderID = 12345667 LIMIT 1;", True)
-    # test(convert_to_sql(False, "! Orders 12345667 L4"), "SELECT * FROM Orders WHERE OrderID = 12345667 LIMIT 4;", True)
-    #
-    # test(convert_to_sql(False, "!ChainID Orders L2"), "SELECT ChainID FROM Orders LIMIT 2;", True)
-    # test(convert_to_sql(False, "!ChainID,OrderID Orders L2"), "SELECT ChainID,OrderID FROM Orders LIMIT 2;", True)
-    # test(convert_to_sql(False, "!ChainID Orders 18942810 L"), "SELECT ChainID FROM Orders WHERE OrderID = 18942810 LIMIT 1;", True)
-    # test(convert_to_sql(False, "!ChainID Orders 18942810"), "SELECT ChainID FROM Orders WHERE OrderID = 18942810;", True)
-    # test(convert_to_sql(False, "!ChainID Orders 18942810 L2"), "SELECT ChainID FROM Orders WHERE OrderID = 18942810 LIMIT 2;", True)
-    # test(convert_to_sql(False, "!ChainID,OrderID Orders 1935091 L2"), "SELECT ChainID,OrderID FROM Orders WHERE OrderID = 1935091 LIMIT 2;", True)
-    # test(convert_to_sql(False, "!ChainID,OrderID Orders orderstatusid=100 L2"), "SELECT ChainID,OrderID FROM Orders WHERE orderstatusid=100 LIMIT 2;", True)
-    # test(convert_to_sql(False, "!chainID,OrderID Orders orderstatusid=100 L2"), "SELECT chainID,OrderID FROM Orders WHERE orderstatusid=100 LIMIT 2;", True)
-    #
-    # test(convert_to_sql(False, "! Orders orderstatusid=100 L2"), "SELECT * FROM Orders WHERE orderstatusid=100 LIMIT 2;", True)
-    # test(convert_to_sql(False, "! Orders orderstatusid=100 L"), "SELECT * FROM Orders WHERE orderstatusid=100 LIMIT 1;", True)
-    # test(convert_to_sql(False, "! BankLedger 193401513"), "SELECT * FROM BankLedger WHERE BankLedgerID = 193401513;", True)
-    #
-    # test(convert_to_sql(False, "!EventID,Processed,ProcessedAs BankLedger 193401513"), "SELECT EventID,Processed,ProcessedAs FROM BankLedger WHERE BankLedgerID = 193401513;", True)
-    # test(convert_to_sql(False, "!EventID,Processed BankLedger 193401513 L"), "SELECT EventID,Processed FROM BankLedger WHERE BankLedgerID = 193401513 LIMIT 1;", True)
-    # test(convert_to_sql(False, "!EventID,Processed,ProcessedAs BankLedger 193401513 L13"), "SELECT EventID,Processed,ProcessedAs FROM BankLedger WHERE BankLedgerID = 193401513 LIMIT 13;", True)
-    #
-    # test(convert_to_sql(False, "!EventID,Processed,ProcessedAs BankLedger L2"), "SELECT EventID,Processed,ProcessedAs FROM BankLedger LIMIT 2;", True)
-    # test(convert_to_sql(False, "! BankLedger L2"), "SELECT * FROM BankLedger LIMIT 2;", True)
-    #
-    # test(convert_to_sql(False, "! Events O L"), "SELECT * FROM Events ORDER BY 1 DESC LIMIT 1;", True)
-    # test(convert_to_sql(False, "! Events OA L"), "SELECT * FROM Events ORDER BY 1 ASC LIMIT 1;", True)
-    # test(convert_to_sql(False, "! Events OD L"), "SELECT * FROM Events ORDER BY 1 DESC LIMIT 1;", True)
-    # test(convert_to_sql(False, "! Events O L3"), "SELECT * FROM Events ORDER BY 1 DESC LIMIT 3;", True)
-    # test(convert_to_sql(False, "! Events OA L4"), "SELECT * FROM Events ORDER BY 1 ASC LIMIT 4;", True)
-    # test(convert_to_sql(False, "! Events OD L5"), "SELECT * FROM Events ORDER BY 1 DESC LIMIT 5;", True)
-    #
-    # test(convert_to_sql(False, "! Events OA_EventID L"), "SELECT * FROM Events ORDER BY EventID ASC LIMIT 1;", True)
-    # test(convert_to_sql(False, "! Events OD_EventID L"), "SELECT * FROM Events ORDER BY EventID DESC LIMIT 1;", True)
-    # test(convert_to_sql(False, "! Events OD_EventID L4"), "SELECT * FROM Events ORDER BY EventID DESC LIMIT 4;", True)
-    # test(convert_to_sql(False, "!eventid,somecolumn Events OD_EventID L2"), "SELECT eventid,somecolumn FROM Events ORDER BY EventID DESC LIMIT 2;", True)
-    # test(convert_to_sql(False, "!eventid,somecolumn Events OA_EventID L1"), "SELECT eventid,somecolumn FROM Events ORDER BY EventID ASC LIMIT 1;", True)
-    # test(convert_to_sql(False, "!eventid,somecolumn Events OA_EventID L3"), "SELECT eventid,somecolumn FROM Events ORDER BY EventID ASC LIMIT 3;", True)
+    test(convert_to_sql(False, "! Orders"), "SELECT * FROM Orders;", True)
+    test(convert_to_sql(False, "! Orders L"), "SELECT * FROM Orders LIMIT 1;", True)
+    test(convert_to_sql(False, "! Orders L5"), "SELECT * FROM Orders LIMIT 5;", True)
+    test(convert_to_sql(False, "! Orders L1"), "SELECT * FROM Orders LIMIT 1;", True)
+    test(convert_to_sql(False, "! Orders 12345667"), "SELECT * FROM Orders WHERE OrderID = 12345667;", True)
+    test(convert_to_sql(False, "! Orders 12345667 L"), "SELECT * FROM Orders WHERE OrderID = 12345667 LIMIT 1;", True)
+    test(convert_to_sql(False, "! Orders 12345667 L4"), "SELECT * FROM Orders WHERE OrderID = 12345667 LIMIT 4;", True)
+    test(convert_to_sql(False, "!ChainID Orders L2"), "SELECT ChainID FROM Orders LIMIT 2;", True)
+    test(convert_to_sql(False, "!ChainID,OrderID Orders L2"), "SELECT ChainID,OrderID FROM Orders LIMIT 2;", True)
+    test(convert_to_sql(False, "!ChainID Orders 18942810 L"), "SELECT ChainID FROM Orders WHERE OrderID = 18942810 LIMIT 1;", True)
+    test(convert_to_sql(False, "!ChainID Orders 18942810"), "SELECT ChainID FROM Orders WHERE OrderID = 18942810;", True)
+    test(convert_to_sql(False, "!ChainID Orders 18942810 L2"), "SELECT ChainID FROM Orders WHERE OrderID = 18942810 LIMIT 2;", True)
+    test(convert_to_sql(False, "!ChainID,OrderID Orders 1935091 L2"), "SELECT ChainID,OrderID FROM Orders WHERE OrderID = 1935091 LIMIT 2;", True)
+    test(convert_to_sql(False, "!ChainID,OrderID Orders orderstatusid=100 L2"), "SELECT ChainID,OrderID FROM Orders WHERE orderstatusid=100 LIMIT 2;", True)
+    test(convert_to_sql(False, "!chainID,OrderID Orders orderstatusid=100 L2"), "SELECT chainID,OrderID FROM Orders WHERE orderstatusid=100 LIMIT 2;", True)
+    test(convert_to_sql(False, "! Orders orderstatusid=100 L2"), "SELECT * FROM Orders WHERE orderstatusid=100 LIMIT 2;", True)
+    test(convert_to_sql(False, "! Orders orderstatusid=100 L"), "SELECT * FROM Orders WHERE orderstatusid=100 LIMIT 1;", True)
+    test(convert_to_sql(False, "! BankLedger 193401513"), "SELECT * FROM BankLedger WHERE BankLedgerID = 193401513;", True)
+    test(convert_to_sql(False, "!EventID,Processed,ProcessedAs BankLedger 193401513"), "SELECT EventID,Processed,ProcessedAs FROM BankLedger WHERE BankLedgerID = 193401513;", True)
+    test(convert_to_sql(False, "!EventID,Processed BankLedger 193401513 L"), "SELECT EventID,Processed FROM BankLedger WHERE BankLedgerID = 193401513 LIMIT 1;", True)
+    test(convert_to_sql(False, "!EventID,Processed,ProcessedAs BankLedger 193401513 L13"), "SELECT EventID,Processed,ProcessedAs FROM BankLedger WHERE BankLedgerID = 193401513 LIMIT 13;", True)
+    test(convert_to_sql(False, "!EventID,Processed,ProcessedAs BankLedger L2"), "SELECT EventID,Processed,ProcessedAs FROM BankLedger LIMIT 2;", True)
+    test(convert_to_sql(False, "! BankLedger L2"), "SELECT * FROM BankLedger LIMIT 2;", True)
+    test(convert_to_sql(False, "! Events O L"), "SELECT * FROM Events ORDER BY 1 DESC LIMIT 1;", True)
+    test(convert_to_sql(False, "! Events OA L"), "SELECT * FROM Events ORDER BY 1 ASC LIMIT 1;", True)
+    test(convert_to_sql(False, "! Events OD L"), "SELECT * FROM Events ORDER BY 1 DESC LIMIT 1;", True)
+    test(convert_to_sql(False, "! Events O L3"), "SELECT * FROM Events ORDER BY 1 DESC LIMIT 3;", True)
+    test(convert_to_sql(False, "! Events OA L4"), "SELECT * FROM Events ORDER BY 1 ASC LIMIT 4;", True)
+    test(convert_to_sql(False, "! Events OD L5"), "SELECT * FROM Events ORDER BY 1 DESC LIMIT 5;", True)
+    test(convert_to_sql(False, "! Events OA_EventID L"), "SELECT * FROM Events ORDER BY EventID ASC LIMIT 1;", True)
+    test(convert_to_sql(False, "! Events OD_EventID L"), "SELECT * FROM Events ORDER BY EventID DESC LIMIT 1;", True)
+    test(convert_to_sql(False, "! Events OD_EventID L4"), "SELECT * FROM Events ORDER BY EventID DESC LIMIT 4;", True)
+    test(convert_to_sql(False, "!eventid,somecolumn Events OD_EventID L2"), "SELECT eventid,somecolumn FROM Events ORDER BY EventID DESC LIMIT 2;", True)
+    test(convert_to_sql(False, "!eventid,somecolumn Events OA_EventID L1"), "SELECT eventid,somecolumn FROM Events ORDER BY EventID ASC LIMIT 1;", True)
+    test(convert_to_sql(False, "!eventid,somecolumn Events OA_EventID L3"), "SELECT eventid,somecolumn FROM Events ORDER BY EventID ASC LIMIT 3;", True)
+    test(convert_to_sql(False, "! Orders OD_Datestamp L1"), "SELECT * FROM Orders ORDER BY Datestamp DESC LIMIT 1;", True)
+    test(convert_to_sql(False, "! Orders OrderStatusID=100 OD_Datestamp L1"), "SELECT * FROM Orders WHERE OrderStatusID=100 ORDER BY Datestamp DESC LIMIT 1;", True)
+    test(convert_to_sql(False, "!OrderID,chainid Orders OrderStatusID=100 OD_Datestamp L1"), "SELECT OrderID,chainid FROM Orders WHERE OrderStatusID=100 ORDER BY Datestamp DESC LIMIT 1;", True)
+    test(convert_to_sql(False, "! Events OD L"), "SELECT * FROM Events ORDER BY 1 DESC LIMIT 1;", True)
+    test(convert_to_sql(False, "! Events O L30"), "SELECT * FROM Events ORDER BY 1 DESC LIMIT 30;", True)
+    test(convert_to_sql(False, "! Events OD L30"), "SELECT * FROM Events ORDER BY 1 DESC LIMIT 30;", True)
+    test(convert_to_sql(False, "! BankLedger OA_Datestamp L"), "SELECT * FROM BankLedger ORDER BY Datestamp ASC LIMIT 1;", True)
+    test(convert_to_sql(False, "! BankLedger OD_Datestamp L"), "SELECT * FROM BankLedger ORDER BY Datestamp DESC LIMIT 1;", True)
+    test(convert_to_sql(False, "! BankLedger OA_Datestamp L20"), "SELECT * FROM BankLedger ORDER BY Datestamp ASC LIMIT 20;", True)
+    test(convert_to_sql(False, "! BankLedger OD_Datestamp L20"), "SELECT * FROM BankLedger ORDER BY Datestamp DESC LIMIT 20;", True)
 
-    # test(convert_to_sql(False, "! Orders OD_Datestamp L1"), "SELECT * FROM Orders ORDER BY Datestamp DESC LIMIT 1;", True)
-    # test(convert_to_sql(False, "! Orders OrderStatusID=100 OD_Datestamp L1"), "SELECT * FROM Orders WHERE OrderStatusID=100 ORDER BY Datestamp DESC LIMIT 1;", True)
-    # test(convert_to_sql(False, "!OrderID,chainid Orders OrderStatusID=100 OD_Datestamp L1"), "SELECT * FROM Orders WHERE OrderStatusID=100 ORDER BY Datestamp DESC LIMIT 1;", True)
+
+
+
+
+
+
+
+
     # test(convert_to_sql(False, "!OrderID,chainid Orders 12345 OD_Datestamp L1"), "SELECT * FROM Orders WHERE OrderStatusID=100 ORDER BY Datestamp DESC LIMIT 1;", True)
     # test(convert_to_sql(False, "!OrderID,chainid Orders 12345 OA_Datestamp L1"), "SELECT * FROM Orders WHERE OrderStatusID=100 ORDER BY Datestamp DESC LIMIT 1;", True)
     # test(convert_to_sql(False, "!OrderID,chainid Orders 12345 OA L1"), "SELECT * FROM Orders WHERE OrderStatusID=100 ORDER BY Datestamp DESC LIMIT 1;", True)
     # test(convert_to_sql(False, "!OrderID,chainid Orders 12345 OD L1"), "SELECT * FROM Orders WHERE OrderStatusID=100 ORDER BY Datestamp DESC LIMIT 1;", True)
     # test(convert_to_sql(False, "!OrderID,chainid Orders 12345 OA L1"), "SELECT * FROM Orders WHERE OrderStatusID=100 ORDER BY Datestamp DESC LIMIT 1;", True)
-    # test(convert_to_sql(False, "!OrderID Orders 12345 OA L1"), "SELECT * FROM Orders WHERE OrderStatusID=100 ORDER BY Datestamp DESC LIMIT 1;", True)
 
-    listOfQuickSQLParts = []
-    quickSQLPart = QuickSQLPart()
-    quickSQLPart.part = '!'
-    quickSQLPart.partType = 'SELECT'
-    quickSQLPart.sqlClause = '*'
-    listOfQuickSQLParts.append(quickSQLPart)
+    # Not sure what this one was supposed to be
+    #test(convert_to_sql(True, "!OrderID Orders 12345 OA L1"), "SELECT * FROM Orders WHERE OrderStatusID=100 ORDER BY Datestamp DESC LIMIT 1;", True)
 
-    for part in listOfQuickSQLParts:
-        print("Part: " + part.part + ", part type: " + part.partType + ", sql clause: " + part.sqlClause)
-    #print("SQL from filter: " + filter(lambda part: part.partType == 'SELECT', listOfQuickSQLParts))
 
-    print(first(part for part in listOfQuickSQLParts if part.partType == 'SELECT').sqlClause)
 
 
     # SELECT name, round(balance,2), currency FROM Accounts JOIN AccountBalances USING(AccountID) WHERE Name = 'CLIENT_BALANCES';
@@ -402,13 +451,4 @@ if __name__ == "__main__":
 #    SELECT * FROM BankWithdrawals JOIN BAnkWithrawalTYpes USING(BankWithdrawalTypeID) WHERE BankWithdrawalType = 'SETTLEMENT' ORDER BY datestamp desc LIMIT 1;
 #    "! BankWithdrawals,BankWithdrawalTypes BankWithdrawalType='SETTLEMENT' OD L"
 
-    # test(convert_to_sql("! Events OD L"), "SELECT * FROM Events ORDER BY EventID DESC LIMIT 1;", True)
-    #
-    # test(convert_to_sql("! Events O L30"), "SELECT * FROM Events ORDER BY EventID ASC LIMIT 30;", True)
-    # test(convert_to_sql("! Events OD L30"), "SELECT * FROM Events ORDER BY EventID DESC LIMIT 30;", True)
-    #
-    # test(convert_to_sql("! BankLedger O_Datestamp L"), "SELECT * FROM BankLedger ORDER BY Datestamp ASC LIMIT 1;", True)
-    # test(convert_to_sql("! BankLedger OD_Datestamp L"), "SELECT * FROM BankLedger ORDER BY Datestamp DESC LIMIT 1;", True)
-    #
-    # test(convert_to_sql("! BankLedger O_Datestamp L20"), "SELECT * FROM BankLedger ORDER BY Datestamp ASC LIMIT 20;", True)
-    # test(convert_to_sql("! BankLedger OD_Datestamp L20"), "SELECT * FROM BankLedger ORDER BY Datestamp DESC LIMIT 20;", True)
+    # test(convert_to_sql("! paypal.Statements (7078, 7090, 8001)"), "SELECT * FROM paypal.Statements WHERE StatementID IN (7078, 7090, 8001)", True)
