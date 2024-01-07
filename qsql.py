@@ -2,6 +2,7 @@ import pexpect
 import re
 import time
 import readline
+from quicksql import convert_to_sql
 
 class FredsQL_state:
     def __init__(self):
@@ -52,6 +53,13 @@ def extract_and_set_database_name_and_user(fredsql):
 
 def wait_for_execution(psql_process, end_of_output_pattern):
 
+    # We have to sleep here at first, to not accidently think that the middle of the output is the end.
+    # That should only happen if the output contains exactly <database_name>=#, which is
+    # unlikely. But could still happen, and would appear very strange for the user.
+    # The user could basically never query that content just because of that.
+    # And if the database is something like "a" it could happen more often which is unacceptable.
+    time.sleep(0.03)
+
     # Wait for the command to finish
     psql_process.expect_exact(pattern_list = [end_of_output_pattern], searchwindowsize=50)
 
@@ -83,6 +91,7 @@ def run_psql_command(fsql_state, command):
     return output
 
 if __name__ == "__main__":
+
     # Start psql process
     fredsql_state = start_psql()
 
@@ -104,5 +113,13 @@ if __name__ == "__main__":
             extract_and_set_database_name_and_user(fredsql_state)
 
             continue
+
+        # Check for quicksql query
+        if user_input[0] == '!':
+            try:
+                user_input = convert_to_sql(False, user_input)
+            except BaseException as error:
+                print("Could not translate supposed quicksql query: " + user_input + ", to sql.\nError raised from quicksql translator:\n\n {}".format(error))
+                continue
 
         print(run_psql_command(fredsql_state, user_input))
