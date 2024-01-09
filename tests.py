@@ -102,3 +102,17 @@ if __name__ == "__main__":
 #    "! BankWithdrawals,BankWithdrawalTypes BankWithdrawalType='SETTLEMENT' OD L"
 
     # test(convert_to_sql("! paypal.Statements (7078, 7090, 8001)"), "SELECT * FROM paypal.Statements WHERE StatementID IN (7078, 7090, 8001)", True)
+
+
+    test(convert_to_sql(False, "!currency,bankwithdrawalid,bankwithdrawaltype,username bankwithdrawals,bankwithdrawaltypes,users bankwithdrawaltype='EXPRESS' OD_Datestamp L5", "SELECT currency,bankwithdrawalid,bankwithdrawaltype,username FROM bankwithdrawals JOIN bankwithdrawaltypes USING(bankwithdrawaltypeID) JOIN users USING(userID) WHERE bankwithdrawaltype='EXPRESS' ORDER BY Datestamp DESC LIMIT 5;", True)
+
+    test(convert_to_sql(False, "!name,round(balance,2),currency AccountBalances,Accounts", "SELECT name,round(balance,2),currency FROM AccountBalances JOIN Accounts USING(AccountID);", True)
+
+    test(convert_to_sql(False, "!round(balance,2),currency AccountBalances,Accounts name='CLIENT_BALANCES'", "SELECT round(balance,2),currency FROM AccountBalances JOIN Accounts USING(AccountID) WHERE name='CLIENT_BALANCES';", True)
+    test(convert_to_sql(False, "! accountbalances,accounts accounts.name='CLIENT_BALANCES'", "SELECT * FROM accountbalances JOIN accounts USING(accountID) WHERE accounts.name='CLIENT_BALANCES';", True)
+    test(convert_to_sql(False, "! accountbalances,accounts name='CLIENT_BALANCES'", "SELECT * FROM accountbalances JOIN accounts USING(accountID) WHERE name='CLIENT_BALANCES';", True)
+
+
+    test(convert_to_sql(False, "!currency,accountid,accounttypes.name accountbalances,accounts,accounttypes accounts.name='CLIENT_BALANCES'", "SELECT currency,accountid,accounttypes.name FROM accountbalances JOIN accounts USING(accountID) JOIN accounttypes USING(accounttypeID) WHERE accounts.name='CLIENT_BALANCES';", True)
+
+    test(convert_to_sql(False, "!accountbalances.* accountbalances,accounts,accounttypes accounts.name='CLIENT_BALANCES'", "SELECT accountbalances.* FROM accountbalances JOIN accounts USING(accountID) JOIN accounttypes USING(accounttypeID) WHERE accounts.name='CLIENT_BALANCES';", True)

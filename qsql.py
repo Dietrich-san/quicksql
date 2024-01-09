@@ -100,7 +100,7 @@ if __name__ == "__main__":
         user_input = input(fredsql_state.username + '@' + fredsql_state.current_database + '-> ')
 
         # Check for exit command
-        if user_input.lower().strip() == 'exit':
+        if user_input.lower().strip() == 'exit' or user_input.lower().strip() == 'exit;':
             fredsql_state.psql_process.terminate()
             break
 
@@ -117,7 +117,9 @@ if __name__ == "__main__":
         # Check for quicksql query
         if user_input[0] == '!':
             try:
-                user_input = convert_to_sql(False, user_input)
+                user_input = convert_to_sql(True, user_input)
+
+                print("Quicksql -> sql: " + user_input)
             except BaseException as error:
                 print("Could not translate supposed quicksql query: " + user_input + ", to sql.\nError raised from quicksql translator:\n\n {}".format(error))
                 continue
