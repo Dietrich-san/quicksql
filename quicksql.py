@@ -23,17 +23,20 @@ def convert_hoffsql_select_to_sql_select_clause(debug_print, input):
 
     return input[1:]
 
-def strip_plural_endings(tablename):
-    print(tablename)
+def strip_plural_endings(debug_print, tablename):
+    if debug_print:
+        print(tablename)
     if tablename[-3:] == 'ies':
 
         return tablename[:-3] + 'y'
     elif tablename[-1] == 's':
-        print("Plural style!")
+        if debug_print:
+            print("Plural style!")
         return tablename[:-1]
 
     else:
-        print("Singular style!")
+        if debug_print:
+            print("Singular style!")
 
 def convert_hoffsql_from_to_sql_from_clause(debug_print, frompart):
     frompart = frompart.strip()
@@ -53,26 +56,29 @@ def convert_hoffsql_from_to_sql_from_clause(debug_print, frompart):
         tables = frompart.split(',')
         #raise Exception("from part cannot contain commas (yet)!")
 
-        print(tables)
+        if debug_print:
+            print(tables)
 
         sql = tables[0]
         first_table = tables[0]
         tables = tables[1:]
 
         for table in tables:
-            sql = sql + ' JOIN ' + table + ' USING(' + strip_plural_endings(table) + 'ID)'
+            sql = sql + ' JOIN ' + table + ' USING(' + strip_plural_endings(debug_print, table) + 'ID)'
 
     # Should split on comma here later, but for now only support one table
     #first_table = frompart
 
-    print("RETUREND MAIN TABLE: "+first_table)
+    if debug_print:
+        print("RETUREND MAIN TABLE: "+first_table)
     return sql, first_table
 
 def convert_hoffsql_where_to_sql_where_clause(debug_print, where, main_table):
     where = where.strip()
     main_table = main_table.strip()
 
-    print("MAIN TABLE: " + main_table)
+    if debug_print:
+        print("MAIN TABLE: " + main_table)
 
     if where == '' or where == None:
         raise Exception("where part needs to be defined!")
