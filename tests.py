@@ -2,10 +2,24 @@ from enum import Enum
 import re
 from quicksql import convert_to_sql
 
+GLOBAL_number_of_tests_run = 0
+GLOBAL_number_of_tests_failed = 0
+GLOBAL_number_of_tests_succeeded = 0
+
 def test_quicksql_convert(quicksql, sql, throw_on_fail):
     print("Attempting to convert quicksql: " + quicksql)
 
-    test(convert_to_sql(False, quicksql), sql, throw_on_fail)
+
+    global GLOBAL_number_of_tests_run
+    global GLOBAL_number_of_tests_failed
+    global GLOBAL_number_of_tests_succeeded
+
+    GLOBAL_number_of_tests_run = GLOBAL_number_of_tests_run + 1
+
+    if test(convert_to_sql(True, quicksql), sql, throw_on_fail):
+        GLOBAL_number_of_tests_succeeded = GLOBAL_number_of_tests_succeeded + 1
+    else:
+        GLOBAL_number_of_tests_failed = GLOBAL_number_of_tests_failed + 1
 
 def test(actual, expected, throw):
     if (actual == None):
@@ -18,12 +32,14 @@ def test(actual, expected, throw):
 
     if (actual == expected):
         print("Test successful! \nActual was: " + actual + "\n")
-        return
+        return True
 
     if throw:
         raise Exception("\n\nFAIL, expected:\n \"" + expected + "\" \nbut was:\n \"" + actual + "\"")
     else:
         print("FAIL, expected \"" + expected + "\" but was \"" + actual + "\"")
+
+    return False
 
 if __name__ == "__main__":
 
@@ -83,6 +99,53 @@ if __name__ == "__main__":
     test_quicksql_convert("! accountbalances,accounts name='CLIENT_BALANCES'", "SELECT * FROM accountbalances JOIN accounts USING(accountID) WHERE name='CLIENT_BALANCES';", True)
     test_quicksql_convert("!currency,accountid,accounttypes.name accountbalances,accounts,accounttypes accounts.name='CLIENT_BALANCES'", "SELECT currency,accountid,accounttypes.name FROM accountbalances JOIN accounts USING(accountID) JOIN accounttypes USING(accounttypeID) WHERE accounts.name='CLIENT_BALANCES';", True)
     test_quicksql_convert("!accountbalances.* accountbalances,accounts,accounttypes accounts.name='CLIENT_BALANCES'", "SELECT accountbalances.* FROM accountbalances JOIN accounts USING(accountID) JOIN accounttypes USING(accounttypeID) WHERE accounts.name='CLIENT_BALANCES';", True)
+    test_quicksql_convert("! Users,UserCategories", "SELECT * FROM Users JOIN UserCategories USING(UserCategoryID);", True)
+    test_quicksql_convert("!userid,usercategories.name Users,UserCategories", "SELECT userid,usercategories.name FROM Users JOIN UserCategories USING(UserCategoryID);", True)
+    test_quicksql_convert("! Users,UserCategories 123", "SELECT * FROM Users JOIN UserCategories USING(UserCategoryID) WHERE UserID = 123;", True)
+    test_quicksql_convert("! Users,UserCategories name='Gaming'", "SELECT * FROM Users JOIN UserCategories USING(UserCategoryID) WHERE name='Gaming';", True)
+    test_quicksql_convert("! Users,UserCategories UserCategoryID=1234", "SELECT * FROM Users JOIN UserCategories USING(UserCategoryID) WHERE UserCategoryID=1234;", True)
+    test_quicksql_convert("! UserCategories", "SELECT * FROM UserCategories;", True)
+    test_quicksql_convert("!usercategories.name UserCategories", "SELECT usercategories.name FROM UserCategories;", True)
+    test_quicksql_convert("!name UserCategories", "SELECT name FROM UserCategories;", True)
+    test_quicksql_convert("! UserCategories 123491509", "SELECT * FROM UserCategories WHERE UserCategoryID = 123491509;", True)
+    test_quicksql_convert("! UserCategories,Users 123491509", "SELECT * FROM UserCategories JOIN Users USING(UserID) WHERE UserCategoryID = 123491509;", True)
+    test_quicksql_convert("! UserCategories,Users UserCategories.Name='Gaming'", "SELECT * FROM UserCategories JOIN Users USING(UserID) WHERE UserCategories.Name='Gaming';", True)
+    test_quicksql_convert("! UserCategories,Users Name='Gaming'", "SELECT * FROM UserCategories JOIN Users USING(UserID) WHERE Name='Gaming';", True)
+    test_quicksql_convert("! UserCategories,Users 51", "SELECT * FROM UserCategories JOIN Users USING(UserID) WHERE UserCategoryID = 51;", True)
+
+    # New Features:
+    test_quicksql_convert("! BankLedger 1234,5678,35858", "SELECT * FROM BankLedger WHERE BankLedgerID IN (1234,5678,35858);", True)
+    test_quicksql_convert("! BankLedger,BankAccounts 1234,5678,35858", "SELECT * FROM BankLedger JOIN BankAccounts USING(BankAccountID) WHERE BankLedgerID IN (1234,5678,35858);", True)
+    test_quicksql_convert("!bankledgerid,ecosysaccount,amount,currency BankLedger,BankAccounts 1234,5678,35858", "SELECT bankledgerid,ecosysaccount,amount,currency FROM BankLedger JOIN BankAccounts USING(BankAccountID) WHERE BankLedgerID IN (1234,5678,35858);", True)
+
+
+
+
+    test_quicksql_convert("! BankLedger,BankAccounts BankAccounts.EcosysAccount='CLIENT_FUNDS_SWEDEN_SWED'", "SELECT * FROM BankLedger JOIN BankAccounts USING(BankAccountID) WHERE BankAccounts.EcosysAccount='CLIENT_FUNDS_SWEDEN_SWED';", True)
+    test_quicksql_convert("! BankLedger,BankAccounts BankAccounts.EcosysAccount='CLIENT_FUNDS_SWEDEN_SWED' O", "SELECT * FROM BankLedger JOIN BankAccounts USING(BankAccountID) WHERE BankAccounts.EcosysAccount='CLIENT_FUNDS_SWEDEN_SWED' ORDER BY 1 DESC;", True)
+    test_quicksql_convert("! BankLedger,BankAccounts BankAccounts.EcosysAccount='CLIENT_FUNDS_SWEDEN_SWED' OD_Datestamp", "SELECT * FROM BankLedger JOIN BankAccounts USING(BankAccountID) WHERE BankAccounts.EcosysAccount='CLIENT_FUNDS_SWEDEN_SWED' ORDER BY Datestamp DESC;", True)
+    test_quicksql_convert("! BankLedger,BankAccounts BankAccounts.EcosysAccount='CLIENT_FUNDS_SWEDEN_SWED' OA_Datestamp", "SELECT * FROM BankLedger JOIN BankAccounts USING(BankAccountID) WHERE BankAccounts.EcosysAccount='CLIENT_FUNDS_SWEDEN_SWED' ORDER BY Datestamp ASC;", True)
+    test_quicksql_convert("! BankLedger,BankAccounts BankAccounts.EcosysAccount='CLIENT_FUNDS_SWEDEN_SWED' OD_Datestamp L", "SELECT * FROM BankLedger JOIN BankAccounts USING(BankAccountID) WHERE BankAccounts.EcosysAccount='CLIENT_FUNDS_SWEDEN_SWED' ORDER BY Datestamp DESC LIMIT 1;", True)
+    test_quicksql_convert("! BankLedger,BankAccounts BankAccounts.EcosysAccount='CLIENT_FUNDS_SWEDEN_SWED' OD_Datestamp L1", "SELECT * FROM BankLedger JOIN BankAccounts USING(BankAccountID) WHERE BankAccounts.EcosysAccount='CLIENT_FUNDS_SWEDEN_SWED' ORDER BY Datestamp DESC LIMIT 1;", True)
+    test_quicksql_convert("! BankLedger,BankAccounts BankAccounts.EcosysAccount='CLIENT_FUNDS_SWEDEN_SWED' OD_Datestamp L4", "SELECT * FROM BankLedger JOIN BankAccounts USING(BankAccountID) WHERE BankAccounts.EcosysAccount='CLIENT_FUNDS_SWEDEN_SWED' ORDER BY Datestamp DESC LIMIT 4;", True)
+
+    # test_quicksql_convert("! UserCategories,Users 51 (Username ilike '%fred%')", "SELECT * FROM UserCategories JOIN Users USING(UserID) WHERE UserCategoryID = 51 AND Username ilike '%fred%';", True)
+    # test_quicksql_convert("! UserCategories,Users 51,34 (Username ilike '%fred%')", "SELECT * FROM UserCategories JOIN Users USING(UserID) WHERE UserCategoryID IN (51,34) AND Username ilike '%fred%';", True)
+    # test_quicksql_convert("! UserCategories,Users (UserCategoryID IN (51, 34) AND Username ilike '%fred%' OR Username = 'apitest')", "SELECT * FROM UserCategories JOIN Users USING(UserID) WHERE UserCategoryID IN (51, 34) AND Username ilike '%fred%' OR Username = 'apitest';", True)
+
+    # test_quicksql_convert("! orders 12357", "SELECT * FROM orders WHERE order_id;", True)
+    # test_quicksql_convert("! bank_withdrawals 12357", "SELECT * FROM orders WHERE bank_withdrawal_id;", True)
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -112,3 +175,11 @@ if __name__ == "__main__":
 #    "! BankWithdrawals,BankWithdrawalTypes BankWithdrawalType='SETTLEMENT' OD L"
 
     # test(convert_to_sql("! paypal.Statements (7078, 7090, 8001)"), "SELECT * FROM paypal.Statements WHERE StatementID IN (7078, 7090, 8001)", True)
+
+
+
+    # Final presentation:
+
+    print("Tests passed: " + str(GLOBAL_number_of_tests_succeeded))
+    print("Tests failed: " + str(GLOBAL_number_of_tests_failed))
+    print("Tests run: " + str(GLOBAL_number_of_tests_run))

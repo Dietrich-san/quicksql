@@ -24,10 +24,6 @@ def start_psql():
     # We need the current database and user to be able to provide a nice prompt for the user of fredsql
     extract_and_set_database_name_and_user(fredsql_state)
 
-    # print("Returning fredstate:")
-    # print(fredsql_state.current_database)
-    # print(fredsql_state.username)
-
     # Disable the pager because my program can't handle it
 
     run_psql_command(fredsql_state, '\pset pager off')
@@ -117,7 +113,7 @@ if __name__ == "__main__":
         # Check for quicksql query
         if user_input[0] == '!':
             try:
-                user_input = convert_to_sql(True, user_input)
+                user_input = convert_to_sql(False, user_input)
 
                 print("Quicksql -> sql: " + user_input)
             except BaseException as error:

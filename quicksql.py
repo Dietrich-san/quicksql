@@ -24,19 +24,25 @@ def convert_hoffsql_select_to_sql_select_clause(debug_print, input):
     return input[1:]
 
 def strip_plural_endings(debug_print, tablename):
+    tablename = tablename.strip()
+
     if debug_print:
         print(tablename)
+
     if tablename[-3:] == 'ies':
 
         return tablename[:-3] + 'y'
+
     elif tablename[-1] == 's':
         if debug_print:
-            print("Plural style!")
+            print("Plural style! Of table " + tablename)
         return tablename[:-1]
 
     else:
         if debug_print:
-            print("Singular style!")
+            print("Singular style! Of table " + tablename)
+
+        return tablename
 
 def convert_hoffsql_from_to_sql_from_clause(debug_print, frompart):
     frompart = frompart.strip()
@@ -77,6 +83,8 @@ def convert_hoffsql_where_to_sql_where_clause(debug_print, where, main_table):
     where = where.strip()
     main_table = main_table.strip()
 
+    pk_name = strip_plural_endings(debug_print, main_table) + "ID"
+
     if debug_print:
         print("MAIN TABLE: " + main_table)
 
@@ -89,28 +97,35 @@ def convert_hoffsql_where_to_sql_where_clause(debug_print, where, main_table):
     if main_table == '' or main_table == None:
         raise Exception("main_table needs to be defined")
 
-    if (where.isdigit()):
+    if (re.search('^[0-9]+$', where) != None):
         # Only a number means, take the first table in fromclause and use the name + ID as query
         if debug_print:
             print("main_table : " + main_table)
 
-        if (main_table[-1:] == "s"):
-            # table's last letter is s, this is the plural style
-            if debug_print:
-                print("Plural style of the main table " + main_table)
-            pk_name = main_table[:-1] + "ID"
-            if debug_print:
-                print("Predicted name of PK: " + pk_name)
-        else:
-            pk_name = main_table + "ID"
-            if debug_print:
-                print("Singular style of the main table " + main_table)
-                print("Predicted name of PK: " + pk_name)
+        # if (main_table[-1:] == "s"):
+        #     # table's last letter is s, this is the plural style
+        #     if debug_print:
+        #         print("Plural style of the main table " + main_table)
+        #     pk_name = main_table[:-1] + "ID"
+        #     if debug_print:
+        #         print("Predicted name of PK: " + pk_name)
+        # else:
+        #     pk_name = main_table + "ID"
+        #     if debug_print:
+        #         print("Singular style of the main table " + main_table)
+        #         print("Predicted name of PK: " + pk_name)
 
         return pk_name + " = " + where
+
+    if (re.search('^[0-9,]+$', where) != None):
+        if (debug_print):
+            print("This is a list of ids, assume they are pks!")
+        return pk_name + " IN (" + where + ")"
     else:
-        # Just return where clause as is
-        return where
+        print("Regex found no match!")
+
+    # Just return where clause as is
+    return where
 
 def convert_hoffsql_orderby_to_sql_orderby_clause(debug_print, orderby):
     orderby = orderby.strip()
@@ -326,7 +341,7 @@ def convert_to_sql(print_debug, hoffsql):
         print("FROM PART: " + quickSQLQuery.fromPart)
     quickSQLQuery.sqlFrom, quickSQLQuery.primaryTable = convert_hoffsql_from_to_sql_from_clause(print_debug, quickSQLQuery.fromPart)
     if print_debug:
-        print("FROM clause: " + quickSQLQuery.sqlFrom + ", primary table " + quickSQLQuery.primaryTable)
+        print("FROM clause: " + quickSQLQuery.sqlFrom + "\nprimary table " + quickSQLQuery.primaryTable)
 
 
 
