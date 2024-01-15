@@ -3,8 +3,9 @@ import re
 
 class PartType(Enum):
     WHERE = 3
-    ORDERBY = 4
-    LIMIT = 5
+    MANUAL_WHERE = 4 # This one is a arbitrarily long where clause that can be written in pure sql, it will just be appended with "AND "
+    ORDERBY = 5
+    LIMIT = 6
 
 def convert_hoffsql_select_to_sql_select_clause(debug_print, input):
     input = input.strip()
@@ -101,19 +102,6 @@ def convert_hoffsql_where_to_sql_where_clause(debug_print, where, main_table):
         # Only a number means, take the first table in fromclause and use the name + ID as query
         if debug_print:
             print("main_table : " + main_table)
-
-        # if (main_table[-1:] == "s"):
-        #     # table's last letter is s, this is the plural style
-        #     if debug_print:
-        #         print("Plural style of the main table " + main_table)
-        #     pk_name = main_table[:-1] + "ID"
-        #     if debug_print:
-        #         print("Predicted name of PK: " + pk_name)
-        # else:
-        #     pk_name = main_table + "ID"
-        #     if debug_print:
-        #         print("Singular style of the main table " + main_table)
-        #         print("Predicted name of PK: " + pk_name)
 
         return pk_name + " = " + where
 
@@ -236,12 +224,14 @@ class QuickSQLQuery:
     selectPart = None
     fromPart = None
     wherePart = None
+    manualWherePart = None
     orderbyPart = None
     limitPart = None
 
     sqlSelect = None
     sqlFrom = None
     sqlWhere = None
+    sqlManualWhere = None
     sqlOrderby = None
     sqlLimit = None
 
@@ -270,6 +260,23 @@ def guess_part_type(print_debug, part_string):
         return PartType.WHERE
 
 def convert_to_sql(print_debug, hoffsql):
+    hoffsql = hoffsql.strip()
+    quickSQLQuery = QuickSQLQuery()
+
+    # Before splitting, check for "manual where clause" which is indicated by parentheses:
+
+    find_manual_where_pattern = ' \(.*\)'
+    manual_where = re.search(find_manual_where_pattern, hoffsql)
+    if (manual_where != None):
+        if print_debug:
+            print("MANUAL_WHERE: " + manual_where.group())
+            quickSQLQuery.manualWherePart = manual_where.group().strip()
+            quickSQLQuery.sqlManualWhere = manual_where.group().strip()
+            hoffsql = re.sub(find_manual_where_pattern, '', hoffsql)
+            hoffsql = hoffsql.strip()
+            print("Manual where clause removed, remaining quicksql: " + hoffsql)
+
+
     if print_debug:
         print("Converting quicksql: " + hoffsql)
     list_of_parts = hoffsql.split(" ")
@@ -284,7 +291,6 @@ def convert_to_sql(print_debug, hoffsql):
     if select_part == '' or select_part == None:
         raise Exception("Select part needs to exist!")
 
-    quickSQLQuery = QuickSQLQuery()
 
     # STEP ONE is to figure out the part type each element is (or should be)
 
@@ -355,6 +361,13 @@ def convert_to_sql(print_debug, hoffsql):
 
 
 
+    if quickSQLQuery.manualWherePart != None:
+        if print_debug:
+            print("MANUAL WHERE PART: " + quickSQLQuery.manualWherePart)
+            print("MANUAL WHERE clause: " + quickSQLQuery.sqlManualWhere)
+
+
+
     if quickSQLQuery.orderbyPart != None:
         if print_debug:
             print("ORDERBY PART: " + quickSQLQuery.orderbyPart)
@@ -380,11 +393,20 @@ def convert_to_sql(print_debug, hoffsql):
         raise Exception("sql from clause should not be empty string at this point!")
 
     sql_query = "SELECT " + quickSQLQuery.sqlSelect + " FROM " + quickSQLQuery.sqlFrom
+
+
+
     if quickSQLQuery.sqlWhere != None:
         if quickSQLQuery.sqlWhere.strip() == '':
             raise Exception("sql where clause should not be empty string at this point!")
 
         sql_query = sql_query + " WHERE " + quickSQLQuery.sqlWhere
+
+    if quickSQLQuery.sqlManualWhere != None:
+        if quickSQLQuery.sqlManualWhere.strip() == '':
+            raise Exception("sql where clause should not be empty string at this point!")
+
+        sql_query = sql_query + " AND " + quickSQLQuery.sqlManualWhere
 
     if quickSQLQuery.sqlOrderby != None:
         if quickSQLQuery.sqlOrderby.strip() == '':
