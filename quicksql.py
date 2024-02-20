@@ -24,8 +24,13 @@ def convert_hoffsql_select_to_sql_select_clause(debug_print, input):
 
     return input[1:]
 
-def strip_plural_endings(debug_print, tablename):
+def strip_plural_endings_and_schema_prefix(debug_print, tablename):
     tablename = tablename.strip()
+
+    if '.' in tablename:
+        tablename_parts = tablename.split('.')
+        # Fetch the second element, should be table name, first element is schema name
+        tablename = tablename_parts[1]
 
     if debug_print:
         print(tablename)
@@ -71,7 +76,7 @@ def convert_hoffsql_from_to_sql_from_clause(debug_print, frompart):
         tables = tables[1:]
 
         for table in tables:
-            sql = sql + ' JOIN ' + table + ' USING(' + strip_plural_endings(debug_print, table) + 'ID)'
+            sql = sql + ' JOIN ' + table + ' USING(' + strip_plural_endings_and_schema_prefix(debug_print, table) + 'ID)'
 
     # Should split on comma here later, but for now only support one table
     #first_table = frompart
@@ -84,7 +89,7 @@ def convert_hoffsql_where_to_sql_where_clause(debug_print, where, main_table):
     where = where.strip()
     main_table = main_table.strip()
 
-    pk_name = strip_plural_endings(debug_print, main_table) + "ID"
+    pk_name = strip_plural_endings_and_schema_prefix(debug_print, main_table) + "ID"
 
     if debug_print:
         print("MAIN TABLE: " + main_table)
@@ -260,6 +265,7 @@ def guess_part_type(print_debug, part_string):
         return PartType.WHERE
 
 def convert_to_sql(print_debug, hoffsql):
+    print("TJoho!")
     hoffsql = hoffsql.strip()
     quickSQLQuery = QuickSQLQuery()
 
@@ -270,10 +276,12 @@ def convert_to_sql(print_debug, hoffsql):
     if (manual_where != None):
         if print_debug:
             print("MANUAL_WHERE: " + manual_where.group())
-            quickSQLQuery.manualWherePart = manual_where.group().strip()
-            quickSQLQuery.sqlManualWhere = manual_where.group().strip()
-            hoffsql = re.sub(find_manual_where_pattern, '', hoffsql)
-            hoffsql = hoffsql.strip()
+
+        quickSQLQuery.manualWherePart = manual_where.group().strip()
+        quickSQLQuery.sqlManualWhere = manual_where.group().strip()
+        hoffsql = re.sub(find_manual_where_pattern, '', hoffsql)
+        hoffsql = hoffsql.strip()
+        if print_debug:
             print("Manual where clause removed, remaining quicksql: " + hoffsql)
 
 
@@ -406,7 +414,10 @@ def convert_to_sql(print_debug, hoffsql):
         if quickSQLQuery.sqlManualWhere.strip() == '':
             raise Exception("sql where clause should not be empty string at this point!")
 
-        sql_query = sql_query + " AND " + quickSQLQuery.sqlManualWhere
+        if quickSQLQuery.sqlWhere != None:
+            sql_query = sql_query + " AND " + quickSQLQuery.sqlManualWhere
+        else:
+            sql_query = sql_query + " WHERE " + quickSQLQuery.sqlManualWhere
 
     if quickSQLQuery.sqlOrderby != None:
         if quickSQLQuery.sqlOrderby.strip() == '':

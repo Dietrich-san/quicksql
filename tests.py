@@ -160,12 +160,18 @@ if __name__ == "__main__":
 
     test_quicksql_convert("! UserCategories,Users 51,34 (Username ilike '%fred%')", "SELECT * FROM UserCategories JOIN Users USING(UserID) WHERE UserCategoryID IN (51,34) AND (Username ilike '%fred%');", True)
 
+    test_quicksql_convert("! Users (Username ilike '%fred%')", "SELECT * FROM Users WHERE (Username ilike '%fred%');", False)
+
+    test_quicksql_convert("! events (fundpoolid <> 1)", "SELECT * FROM events WHERE (fundpoolid <> 1);", False)
+
+    test_quicksql_convert("!round(amount) events (fundpoolid <> 1)", "SELECT round(amount) FROM events WHERE (fundpoolid <> 1);", False)
+
+    test_quicksql_convert("! balancing.calculationsnapshots 529541131", "SELECT * FROM balancing.calculationsnapshots WHERE calculationsnapshotID = 529541131;", False)
+
+    test_quicksql_convert("! balancing.calculationsnapshots,balancing.BankAccountPairs 529541131", "SELECT * FROM balancing.calculationsnapshots JOIN balancing.BankAccountPairs USING(BankAccountPairID) WHERE calculationsnapshotID = 529541131;", False)
 
 
-
-
-
-
+    # ! balancing.CalculationSnapshots,balancing.BankAccountPairs (BankAccountPairs.Currency = 'SEK') = SELECT * FROM balancing.CalculationSnapshots JOIN balancing.BankAccountPairs USING(BankAccountPairID) WHERE BankAccountPairs.Currency = 'SEK'
 
     # ideas
     #test_quicksql_convert("!orderid,workertype,datestamp,orderstatusid Orders,WorkerTypes(WorkerTypeID, OrderTypeID) OD_Datestamp L10", "SELECT orderid,workertype,datestamp,orderstatusid FROM Orders JOIN WorkerTypes ON WorkerTypes.WorkerTypeID = Orders.OrderTypeID ORDER BY Datestamp DESC LIMIT 10", True)
@@ -200,6 +206,8 @@ if __name__ == "__main__":
 
     # test(convert_to_sql("! paypal.Statements (7078, 7090, 8001)"), "SELECT * FROM paypal.Statements WHERE StatementID IN (7078, 7090, 8001)", True)
 
+    #!settled-datestamp,internaltransferid internaltransfers (currency = 'SEK' and balancingforfundpoolid is not null) OD_Datestamp L100
+
 
 
     # Final presentation:
@@ -210,3 +218,32 @@ if __name__ == "__main__":
     print("Failed tests(#): " + str(GLOBAL_failed_tests))
     if GLOBAL_number_of_tests_succeeded == GLOBAL_number_of_tests_run:
         print("ALL TESTS SUCCESSFUL!")
+
+
+    # CRAZY ideas:
+
+    # ! users apitest -> SELECT * FROM Users WHERE Username = 'apitest'
+    # Maybe we can look at the input and if its just a string try to guess that it's a column with the name table+name or just "name"
+
+    #
+    # SELECT max(InternalTransfers.Datestamp)
+    # INTO STRICT _DatestampLast
+    # FROM InternalTransfers
+    # JOIN balancing.CalculationSnapshots ON CalculationSnapshots.InternalTransferID = InternalTransfers.InternalTransferID
+    # WHERE
+    #     BankAccountPairs.IsMain IS TRUE;
+    #
+    # !max(InternalTransfers.Datestamp) InternalTransfers,balancing.CalculationSnapshots (BankAccountPairs.IsMain)
+
+    # Maybe above we could auto create the group by clause? Maybe everything that is in the select clause that is not in a agg-function?
+    # Just like everyone in the world would want it.
+    # Maybe:
+    # !bankaccountpairid,max(InternalTransfers.Datestamp) InternalTransfers,balancing.CalculationSnapshots (BankAccountPairs.IsMain) ->
+    # SELECT bankaccountpairid,max(InternalTransfers.Datestam) FROM InternalTransfers JOIN balancing.BankAccountPairs USING(InternalTransferID)
+
+    # or somethign... actually forget the above. Or not.
+
+    # BUGS:
+
+    # Triggers a loop:
+    # !fundpoolid users (username in ('testuser0.956787090346406','testuser0.054604995758325','testuser0.174641951419023')
